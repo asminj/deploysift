@@ -52,8 +52,12 @@ class MuseAdapter
         }
 
         $package = $this->buildPackage($investigation->load('evidence', 'findings'));
+        $client = Http::withToken((string) config('services.muse.key'));
+        if (is_file($ca = base_path('resources/cacert.pem'))) {
+            $client = $client->withOptions(['verify' => $ca]);
+        }
         try {
-            $response = Http::withToken((string) config('services.muse.key'))
+            $response = $client
                 ->timeout(60)->retry(2, 1000, throw: false)
                 ->post(rtrim((string) config('services.muse.endpoint'), '/').'/v1/responses', [
                     'model' => config('services.muse.model'),
