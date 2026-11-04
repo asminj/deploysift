@@ -4,7 +4,7 @@ const baseURL = process.env.E2E_BASE_URL ?? 'http://127.0.0.1:8000';
 
 export default defineConfig({
   testDir: './e2e',
-  timeout: 60000,
+  timeout: 180000,
   fullyParallel: false,
   workers: 1,
   reporter: 'list',

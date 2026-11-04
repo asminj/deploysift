@@ -27,6 +27,8 @@ class InvestigationController extends Controller {
   'BROWSER_JS_EXCEPTION'=>['Open the linked evidence to read the full stack trace and failing line.','Fix the script error, rebuild assets if bundled, and re-run the browser flow.'],
   'HTTP_ASSET_FORBIDDEN'=>['Check file and directory permissions for the blocked asset path on the host.','Confirm hotlink or access rules are not denying the asset.'],
   'HTTP_ASSET_MISSING'=>['Rebuild with `npm run build` and confirm the asset exists in `public/build`.','Compare the manifest against the URLs the page requests.'],
+'CONTRADICTORY_PHP_VERSION'=>['Confirm which PHP version the domain actually runs (hosting panel or `php -v` on the host).','Remove or correct the outdated hosting evidence, then re-run diagnostics.'],
+'MISSING_PHP_EXTENSION'=>['Ask the host to enable pdo_mysql (or the matching driver) for the domain PHP version.','Confirm the application actually requires a database before changing the build.'],
   default=>['Confirm this observation against a second evidence source before changing anything.','Record the verification outcome on the investigation timeline.'],
  };}
  private function verificationChecklist(): array {return ['Open every evidence ID linked to a finding before acting on it.','Reproduce the failure once more after any fix, using the same evidence sources.','Matching-observation counts are not calibrated probabilities; treat them as qualitative support only.'];}
@@ -42,7 +44,95 @@ class InvestigationController extends Controller {
   'BROWSER_JS_EXCEPTION'=>['Re-run the browser flow with the console open; no new exceptions.'],
   'HTTP_ASSET_FORBIDDEN'=>['Request the asset directly; expect HTTP 200.'],
   'HTTP_ASSET_MISSING'=>['Request the asset directly; expect HTTP 200 with manifest entry present.'],
+'CONTRADICTORY_PHP_VERSION'=>['Re-check the panel after selecting a single PHP version.'],
+'MISSING_PHP_EXTENSION'=>['Run a page calling phpinfo() (then remove it) or `php -m` on the host to confirm the driver appears.'],
   default=>['Confirm the observation against a second evidence source.'],
  };}
- private function buildReport(Investigation $investigation): array {return ['investigation'=>['id'=>$investigation->id,'name'=>$investigation->name,'framework'=>$investigation->framework,'environment'=>$investigation->environment,'problem'=>$investigation->problem,'synthetic'=>$investigation->is_synthetic],'generated_at'=>now()->toIso8601String(),'evidence_inventory'=>$investigation->evidence->map(fn($e)=>['id'=>$e->id,'category'=>$e->category,'name'=>$e->original_name,'facts'=>$e->extracted]),'findings'=>$investigation->findings->map(fn($f)=>['identifier'=>$f->identifier,'category'=>$f->category,'severity'=>$f->severity,'title'=>$f->title,'detail'=>$f->detail,'expected'=>$f->expected,'observed'=>$f->observed,'confidence_methodology'=>$f->confidence,'evidence_ids'=>$f->evidence_ids,'rule'=>$f->rule_name,'recommended_actions'=>$this->recommendationsFor($f->identifier),'supporting_observations'=>$this->supportingFor($investigation,$f),'contradicting_observations'=>['No contradicting evidence identified in the current evidence set.'],'verification_steps'=>$this->verificationStepsFor($f->identifier)]),'missing_information'=>['Only configuration visible in evidence is treated as confirmed.'],'verification_checklist'=>$this->verificationChecklist(),'ai'=>['status'=>'not_configured','note'=>'No AI claim is included without a verified provider adapter and evidence references.']];}
+ private function buildReport(Investigation $investigation): array {return ['investigation'=>['id'=>$investigation->id,'name'=>$investigation->name,'framework'=>$investigation->framework,'environment'=>$investigation->environment,'problem'=>$investigation->problem,'synthetic'=>$investigation->is_synthetic],'generated_at'=>now()->toIso8601String(),'evidence_inventory'=>$investigation->evidence->map(fn($e)=>['id'=>$e->id,'category'=>$e->category,'name'=>$e->original_name,'facts'=>$e->extracted]),'findings'=>$investigation->findings->map(fn($f)=>['identifier'=>$f->identifier,'category'=>$f->category,'severity'=>$f->severity,'title'=>$f->title,'detail'=>$f->detail,'expected'=>$f->expected,'observed'=>$f->observed,'confidence_methodology'=>$f->confidence,'evidence_ids'=>$f->evidence_ids,'rule'=>$f->rule_name,'recommended_actions'=>$this->recommendationsFor($f->identifier),'supporting_observations'=>$this->supportingFor($investigation,$f),'contradicting_observations'=>['No contradicting evidence identified in the current evidence set.'],'verification_steps'=>$this->verificationStepsFor($f->identifier)]),'missing_information'=>$this->missingInformation($investigation),'verification_checklist'=>$this->verificationChecklist(),'recommendations'=>$this->topRecommendations($investigation),'ai'=>['status'=>'not_configured','note'=>'No AI claim is included without a verified provider adapter and evidence references.'],'ai_analysis'=>$this->buildAiAnalysis($investigation),'summary'=>$this->buildSummary($investigation),'project_profile'=>$this->buildProjectProfile($investigation),'observations'=>$this->buildObservations($investigation),'potential_issues'=>$this->buildPotentialIssues($investigation),'evidence_correlations'=>$this->buildCorrelations($investigation),'root_cause_assessment'=>$this->buildRootCause($investigation)];}
+ private function factText(array $facts,string $key): ?string { $v=$facts[$key]??null; if(is_array($v))return implode(', ',$v); if($v===true)return 'yes'; if($v===false||$v===null)return null; return (string)$v; }
+ private function caretMeaning(string $constraint): ?string { if(preg_match('/^\^(\d+)\.(\d+)/',$constraint,$m)){return "permits versions from {$m[1]}.{$m[2]}.0 up to, but not including, ".($m[1]+1).".0.0";} return null; }
+ private function observationFor($e,string $key,string $value): ?array {
+  $base=['id'=>'obs-'.$e->id.'-'.$key,'evidence_id'=>$e->id,'evidence_name'=>$e->original_name,'category'=>$e->category,'fact'=>$value,'source'=>'extracted from '.$e->original_name];
+  switch($key){
+   case 'required_php': $meaning=$this->caretMeaning($value); return $base+['title'=>'PHP runtime requirement','interpretation'=>'The project declares a PHP requirement of '.$value.($meaning?'. This constraint generally '.$meaning.'.':'.'),'severity'=>'medium','confidence'=>'verified observation','status'=>'confirmed fact'];
+   case 'required_laravel': return $base+['title'=>'Framework requirement','interpretation'=>'The project requires laravel/framework '.$value.'; diagnostics assume Laravel/PHP semantics.','severity'=>'low','confidence'=>'verified observation','status'=>'confirmed fact'];
+   case 'require_count': return $base+['title'=>'Dependency footprint','interpretation'=>'composer.json declares '.$value.' production packages; dependency conflicts become more likely as this grows.','severity'=>'low','confidence'=>'verified observation','status'=>'confirmed fact'];
+   case 'scripts_present': return $base+['title'=>'Composer scripts present','interpretation'=>'composer.json defines lifecycle scripts (e.g. post-autoload-dump); deployment must run them.','severity'=>'low','confidence'=>'verified observation','status'=>'confirmed fact'];
+   case 'visible_php': return $base+['title'=>'Observed hosting PHP version','interpretation'=>'Hosting evidence shows PHP '.$value.'. Treat panel wording as observed text until the active runtime is confirmed.','severity'=>'medium','confidence'=>'verified observation','status'=>'confirmed fact'];
+   case 'visible_docroot': $ok=strtolower(basename(str_replace('\\','/',$value)))==='public'; return $base+['title'=>'Observed document root','interpretation'=>'Hosting evidence shows document root '.$value.($ok?'; this matches the Laravel public/ convention.':', which does not end in the Laravel public/ directory.'),'severity'=>$ok?'low':'medium','confidence'=>'verified observation','status'=>'confirmed fact'];
+   case 'visible_handler': return $base+['title'=>'Observed PHP handler','interpretation'=>'Hosting evidence reports the PHP handler as '.$value.'.','severity'=>'low','confidence'=>'verified observation','status'=>'confirmed fact'];
+   case 'visible_extensions': return $base+['title'=>'Observed PHP extensions','interpretation'=>'Hosting evidence lists: '.$value.'.','severity'=>'low','confidence'=>'verified observation','status'=>'confirmed fact'];
+   case 'exception_type': return $base+['title'=>'Logged exception','interpretation'=>'The application log records a '.$value.'. See the linked evidence for message, file and stack trace.','severity'=>'high','confidence'=>'verified observation','status'=>'confirmed fact'];
+   case 'logged_at': return $base+['title'=>'Log timestamp','interpretation'=>'The failure was logged at '.$value.'.','severity'=>'low','confidence'=>'verified observation','status'=>'confirmed fact'];
+   case 'file_location': return $base+['title'=>'Failure location','interpretation'=>'The trace points at '.$value.'.','severity'=>'medium','confidence'=>'verified observation','status'=>'confirmed fact'];
+   case 'platform_error': case 'platform_check': return $base+['title'=>'Platform compatibility error','interpretation'=>'The runtime reports: '.$value.'.','severity'=>'high','confidence'=>'verified observation','status'=>'confirmed fact'];
+   case 'js_error': return $base+['title'=>'Browser JavaScript error','interpretation'=>'The browser console reports: '.$value.'.','severity'=>'medium','confidence'=>'verified observation','status'=>'confirmed fact'];
+   case 'permission_error': return $base+['title'=>'Filesystem permission error','interpretation'=>'The log reports: '.$value.'.','severity'=>'high','confidence'=>'verified observation','status'=>'confirmed fact'];
+   case 'composer_conflict': return $base+['title'=>'Dependency conflict message','interpretation'=>'The package output reports: '.$value.'.','severity'=>'high','confidence'=>'verified observation','status'=>'confirmed fact'];
+   case 'app_key': return $base+['title'=>'Encryption key present','interpretation'=>'The environment file contains a non-empty APP_KEY (value never displayed).','severity'=>'low','confidence'=>'verified observation','status'=>'confirmed fact'];
+   default: return null;
+  }
+ }
+ private function buildObservations(Investigation $investigation): array { $out=[]; foreach($investigation->evidence as $e){ $facts=is_array($e->extracted)?$e->extracted:[]; foreach($facts as $k=>$v){ if(in_array($k,['http_requests','request_timings','logged_at'],true)&&$k!=='logged_at')continue; if(is_array($v)&&$k!=='visible_extensions')continue; $text=$this->factText($facts,$k); if($text===null||$text==='')continue; $o=$this->observationFor($e,$k,$text); if($o)$out[]=$o; }
+  if(!empty($facts['http_requests']))foreach(array_slice($facts['http_requests'],0,10) as $rq){ $out[]=['id'=>'obs-'.$e->id.'-req-'.count($out),'evidence_id'=>$e->id,'evidence_name'=>$e->original_name,'category'=>$e->category,'fact'=>($rq['method']??'?').' '.($rq['url']??'?'),'interpretation'=>'Recorded HTTP request ' .($rq['method']??'').' '.($rq['url']??'').'.','severity'=>'low','confidence'=>'verified observation','status'=>'confirmed fact','source'=>'extracted from '.$e->original_name]; } } return $out; }
+ private function buildPotentialIssues(Investigation $investigation): array {
+  $out=[]; $factsByEv=[]; $hasHostingPhp=false; $hasLogs=false; $hasBrowser=false; $hasProject=false; $has500=false; $requiredPhp=null; $extLists=[];
+  foreach($investigation->evidence as $e){ $facts=is_array($e->extracted)?$e->extracted:[]; $factsByEv[$e->id]=$facts;
+   if($e->category==='logs')$hasLogs=true; if($e->category==='browser')$hasBrowser=true; if($e->category==='project')$hasProject=true;
+   if(isset($facts['visible_php']))$hasHostingPhp=true;
+   if(isset($facts['required_php']))$requiredPhp=$facts['required_php'];
+   if(isset($facts['visible_extensions']))$extLists[$e->id]=(array)$facts['visible_extensions'];
+   if(stripos((string)($e->content??''), '500')!==false&&preg_match('/\b500\b/',(string)($e->content??'')))$has500=true; }
+  $evIds=array_keys($factsByEv);
+  if($requiredPhp&&! $hasHostingPhp)$out[]=['id'=>'POTENTIAL_HOSTING_MISMATCH','title'=>'Hosting compatibility cannot yet be verified','explanation'=>'The project requires PHP '.$requiredPhp.', but no hosting PHP version has been supplied. An incompatible runtime would prevent the application from running.','severity'=>'medium','status'=>'potential issue','evidence_ids'=>$evIds,'missing'=>['Hosting PHP version (hosting panel output or screenshot)'],'recommended'=>['Upload the hosting PHP configuration or hosting-panel screenshot to verify compatibility.']];
+  if($has500&&! $investigation->findings->count())$out[]=['id'=>'UNEXPLAINED_HTTP_500','title'=>'HTTP 500 observed without an established cause','explanation'=>'Evidence records HTTP 500 responses, but no confirmed finding explains them yet. The root cause is not established.','severity'=>'medium','status'=>'potential issue','evidence_ids'=>$evIds,'missing'=>['Application log with the server-side error','Hosting PHP version','Deployment output around the failing request'],'recommended'=>['Upload laravel.log covering the failing request time.','Upload the hosting PHP configuration.']];
+  foreach($extLists as $eid=>$list){ $lower=array_map('strtolower',(array)$list); if(!in_array('pdo_mysql',$lower,true)&&!in_array('mysqli',$lower,true)){$out[]=['id'=>'POTENTIAL_DB_DRIVER_GAP','title'=>'Database driver presence unverified','explanation'=>'The listed hosting extensions do not include a MySQL driver. This only matters if the application uses a database.','severity'=>'low','status'=>'potential issue','evidence_ids'=>[$eid],'missing'=>['Confirmation of whether the application uses a database'],'recommended'=>['Confirm database usage; if MySQL is used, ask the host to enable pdo_mysql.']];break;} }
+  if(! $investigation->evidence->count())$out[]=['id'=>'INSUFFICIENT_EVIDENCE','title'=>'No evidence uploaded yet','explanation'=>'Upload project files, logs, hosting output or browser evidence to begin analysis.','severity'=>'low','status'=>'insufficient evidence','evidence_ids'=>[],'missing'=>['Project files (composer.json)','Application log','Hosting PHP configuration','Browser console or network export'],'recommended'=>['Upload composer.json first; it identifies platform requirements with no credentials involved.']];
+  return $out;
+ }
+ private function buildCorrelations(Investigation $investigation): array {
+  $names=$investigation->evidence->keyBy('id'); $findings=$investigation->findings->keyBy('id'); $out=[];
+  foreach($investigation->relationships as $rel){ $names2=[]; foreach((array)$rel->evidence_ids as $id){ if(isset($names[$id]))$names2[]='['.$names[$id]->category.'] '.$names[$id]->original_name; } $f=$findings->get($rel->finding_id); $out[]=['finding'=>$f?$f->identifier:null,'finding_title'=>$f?$f->title:null,'relationship'=>$rel->relationship,'evidence_ids'=>array_values((array)$rel->evidence_ids),'evidence'=>$names2,'detail'=>$rel->detail]; }
+  return $out;
+ }
+ private function buildRootCause(Investigation $investigation): array {
+  $top=$investigation->findings->sortBy(fn($f)=>['critical'=>0,'high'=>1,'medium'=>2,'low'=>3][strtolower($f->severity)]??4)->first();
+  if(! $top)return ['status'=>'not-established','finding'=>null,'title'=>null,'explanation'=>'Root cause is not established. The current evidence does not support a definitive diagnosis.','needs'=>['More evidence: hosting runtime, application log, browser failures.']];
+  return ['status'=>'established','finding'=>$top->identifier,'title'=>$top->title,'explanation'=>$top->detail.' Expected: '.$top->expected.'. Observed: '.$top->observed.'.','needs'=>[]];
+ }
+ private function missingInformation(Investigation $investigation): array {
+  $out=['Only configuration visible in evidence is treated as confirmed.']; $hasCat=[]; $hasPhp=false; $has500=false;
+  foreach($investigation->evidence as $e){ $hasCat[$e->category]=true; $f=is_array($e->extracted)?$e->extracted:[]; if(isset($f['visible_php']))$hasPhp=true; if(preg_match('/\b500\b/',(string)($e->content??'')))$has500=true; }
+  if(! $hasPhp)$out[]='Hosting PHP version (upload hosting panel output or a screenshot of the PHP configuration).';
+  if(empty($hasCat['logs']))$out[]='Application log (e.g. laravel.log) covering the failure.';
+  if(empty($hasCat['browser']))$out[]='Browser console or network export for client-side symptoms.';
+  if(empty($hasCat['project']))$out[]='Project files (composer.json) stating platform requirements.';
+  if($has500)$out[]='Server-side error text linking the HTTP 500 to a cause.';
+  return $out;
+ }
+ private function topRecommendations(Investigation $investigation): array {
+  $all=[]; foreach($investigation->findings as $f)foreach($this->recommendationsFor($f->identifier) as $r)$all[]=$r;
+  foreach($this->buildPotentialIssues($investigation) as $p)foreach((array)($p['recommended']??[]) as $r)$all[]=$r;
+  return array_values(array_unique($all));
+ }
+ private function buildSummary(Investigation $investigation): string {
+  $n=$investigation->evidence->count(); $f=$investigation->findings->count();
+  $req=null; foreach($investigation->evidence as $e){ $x=is_array($e->extracted)?$e->extracted:[]; if(isset($x['required_php'])){$req=$x['required_php'];break;} }
+  $s='Analyzed '.$n.' evidence file'.($n===1?'':'s').' with '.$f.' confirmed finding'.($f===1?'':'s').'.';
+  if($req)$s.=' The project requires PHP '.$req.'.';
+  if($f){ $top=$investigation->findings->sortBy(fn($x)=>['critical'=>0,'high'=>1,'medium'=>2,'low'=>3][strtolower($x->severity)]??4)->first(); if($top)$s.=' Primary finding: '.$top->title.'.'; }
+  else $s.=' No definitive diagnosis yet — see missing information for what to upload next.';
+  return $s;
+ }
+ private function buildProjectProfile(Investigation $investigation): array {
+  $req=null;$lar=null;$env=$investigation->environment;
+  foreach($investigation->evidence as $e){ $x=is_array($e->extracted)?$e->extracted:[]; if($req===null&&isset($x['required_php']))$req=$x['required_php']; if($lar===null&&isset($x['required_laravel']))$lar=$x['required_laravel']; }
+  return ['name'=>$investigation->name,'framework'=>$investigation->framework,'environment'=>$env,'problem'=>$investigation->problem,'synthetic'=>$investigation->is_synthetic,'required_php'=>$req,'required_laravel'=>$lar];
+ }
+ private function buildAiAnalysis(Investigation $investigation): array {
+  $muse=app(MuseAdapter::class); $st=$muse->status(); $runs=$investigation->aiRuns()->latest()->take(5)->get();
+  $latest=$runs->first();
+  return ['provider'=>$st['provider'],'model'=>$st['model'],'status'=>$st['status'],'note'=>$st['note'],'runs_kept'=>$runs->count(),
+   'latest_run'=>$latest?['id'=>$latest->id,'state'=>$latest->state,'created_at'=>$latest->created_at,'insights'=>is_array($latest->output)?count($latest->output['insights']??[]):0,'error'=>$latest->error]:null];
+ }
 }

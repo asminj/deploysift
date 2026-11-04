@@ -13,6 +13,8 @@
 - Dashboard metrics from live records, evidence listing/removal, investigation delete with confirmation.
 - One-click demo launch (`POST /api/demo/{php,database,vite}`), JSON report export, honest `not_configured` AI status.
 - Reports with per-finding recommended actions, a verification checklist, and clickable finding-to-evidence navigation plus a print stylesheet for PDF via the browser.
+- Enriched deterministic analysis: per-evidence observations, potential risks for partial evidence, evidence correlations, root-cause assessment, and structured missing-information guidance — all in the JSON report alongside the raw data.
+- AI Analysis page with overview counts, project understanding, observation cards, risk cards with remediation, missing-evidence list, and honest provider status with one-click live analysis when configured.
 - Browser upload UI: drag-and-drop, file picker, multi-file queue with per-file progress, validation feedback, retry, and removal.
 - Ten deterministic rule families: PHP version, database connection, Vite assets, missing APP_KEY, Composer platform conflicts, storage permissions, document-root mismatch, browser JS exceptions, HTTP 403 assets, HTTP 404 assets — every finding carries evidence references, supporting observations, verification steps, and correlation links.
 

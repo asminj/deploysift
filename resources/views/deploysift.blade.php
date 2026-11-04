@@ -38,6 +38,11 @@
     .st-err { color: #ff9a9a; }
     .st-run { color: #7fd0ff; }
     .uperr { color: #ff9a9a; margin-top: 8px; }
+    .obs { border-left: 3px solid #22D3EE; background: #0f1c30; border-radius: 0 8px 8px 0; padding: 10px 14px; margin: 8px 0; }
+    .obs h4 { margin: 0 0 6px; }
+    .obs p { margin: 4px 0; }
+    details.raw { margin-top: 12px; }
+    details.raw summary { cursor: pointer; color: #9fc2e3; }
     @media (max-width: 800px) {
       body { display: block; }
       aside { width: auto; min-height: auto; }
@@ -429,18 +434,100 @@
       restoreCat();
     }
 
+    const obsCard = o => `
+      <div class="obs">
+        <h4>${e(o.title)}</h4>
+        <p>${e(o.interpretation)}</p>
+        <p><small>Source: ${e(o.evidence_name)} (evidence #${o.evidence_id}) · ${e(o.status)} · ${e(o.confidence)}</small></p>
+        <p><button class="ghost" onclick="gotoEvIds([${o.evidence_id}])">Open supporting evidence</button></p>
+      </div>`;
+
+    const riskCard = p => `
+      <div class="obs" style="border-left-color:#F59E0B">
+        <h4>${e(p.title)} <span class="badge">${e(p.status || 'potential issue')}</span></h4>
+        <p>${e(p.explanation)}</p>
+        ${(p.missing || []).length ? `<p><small>Missing: ${p.missing.map(m => e(m)).join(' · ')}</small></p>` : ''}
+        ${(p.recommended || []).map(r => `<p><small>→ ${e(r)}</small></p>`).join('')}
+        <p><button class="ghost" onclick="gotoEvIds([${(p.evidence_ids || []).join(',')}])">Open related evidence</button></p>
+      </div>`;
+
+    async function runAiAnalysis() {
+      const btn = document.querySelector('#ai-run');
+      if (btn) { btn.disabled = true; btn.textContent = 'Analyzing…'; }
+      try {
+        await api(`investigations/${selected}/ai`, { method: 'POST', body: '{}' });
+      } catch (err) {
+        alert(err.message || 'AI analysis failed.');
+      }
+      openAiView();
+    }
+
     async function openAiView() {
-      const a = await api(`investigations/${selected}/ai`);
+      const [a, r] = await Promise.all([
+        api(`investigations/${selected}/ai`),
+        api(`investigations/${selected}/report`),
+      ]);
+      const findings = r.findings || [];
+      const obs = r.observations || [];
+      const risks = r.potential_issues || [];
+      const profile = r.project_profile || {};
+      const missing = (r.missing_information || []).filter(m => m !== 'Only configuration visible in evidence is treated as confirmed.');
+      const ai = r.ai_analysis || {};
+      const latest = ai.latest_run || null;
+
+      const aiBlock = a.status === 'configured'
+        ? `<p><button id="ai-run" onclick="runAiAnalysis()">Run AI analysis</button></p>
+           ${latest ? `<p><small>Latest run #${latest.id}: ${e(latest.state)}${latest.state === 'completed' ? ' · ' + latest.insights + ' insight(s)' : ''}${latest.error ? ' — ' + e(latest.error) : ''}</small></p>` : '<p><small>No AI runs yet for this investigation.</small></p>'}`
+        : `<p><span class="badge" style="color:#F59E0B">AI unavailable</span></p>`;
+
       app.innerHTML = `
         <div class="card">
-          <h2>AI Analysis</h2>
-          <p>Status: ${e(a.status)} (${e(a.provider)})</p>
+          <h2>Analysis overview</h2>
+          <div class="grid">
+            <div class="card"><div class="sub">Evidence files</div><div class="metric">${(r.evidence_inventory || []).length}</div></div>
+            <div class="card"><div class="sub">Observations</div><div class="metric">${obs.length}</div></div>
+            <div class="card"><div class="sub">Confirmed findings</div><div class="metric">${findings.length}</div></div>
+            <div class="card"><div class="sub">Potential issues</div><div class="metric">${risks.length}</div></div>
+            <div class="card"><div class="sub">Missing evidence</div><div class="metric">${missing.length}</div></div>
+            <div class="card"><div class="sub">AI status</div><div class="metric" style="font-size:15px">${e(a.status)}</div></div>
+          </div>
+        </div>
+        <div class="card">
+          <h2>Project understanding</h2>
+          <p><b>${e(profile.name || '')}</b> · ${e(profile.framework || 'Laravel / PHP')}</p>
+          <p><small>
+            ${profile.required_php ? 'Detected requirement: PHP ' + e(profile.required_php) + '<br>' : ''}
+            ${profile.required_laravel ? 'Detected framework: Laravel ' + e(profile.required_laravel) + '<br>' : ''}
+            ${profile.environment ? 'Environment: ' + e(profile.environment) + '<br>' : ''}
+          </small></p>
+        </div>
+        <div class="card">
+          <h2>Key observations</h2>
+          ${obs.map(obsCard).join('') || '<p>No technical observations extracted yet. Upload project files or logs to begin.</p>'}
+        </div>
+        <div class="card">
+          <h2>Potential risks</h2>
+          ${risks.map(riskCard).join('') || '<p>No potential risks identified.</p>'}
+        </div>
+        <div class="card">
+          <h2>Missing evidence</h2>
+          ${missing.length ? '<p>' + missing.map(m => '• ' + e(m)).join('<br>') + '</p>' : '<p>Nothing missing — the evidence set looks complete for the current findings.</p>'}
+        </div>
+        <div class="card">
+          <h2>AI interpretation</h2>
+          <p>Status: ${e(a.status)} (${e(a.provider || 'meta-muse')})</p>
           <p>${e(a.note)}</p>
+          ${aiBlock}
         </div>`;
     }
 
     async function openReportView(id) {
       const r = await api(`investigations/${id}/report`);
+      const root = r.root_cause_assessment || {};
+      const corr = r.evidence_correlations || [];
+
+      const section = (title, body) => body ? `<div class="card"><h2>${title}</h2>${body}</div>` : '';
+
       const findings = (r.findings || []).map(f => `
         <div class="row" onclick="gotoEvIds([${(f.evidence_ids || []).join(',')}])">
           <span>
@@ -448,19 +535,51 @@
             <small>${(f.recommended_actions || []).map(a => e(a)).join('<br>')}</small>
           </span>
           <span>evidence</span>
-        </div>`).join('') || '<p>No findings.</p>';
+        </div>`).join('') || '<p>No confirmed findings. See potential risks and missing evidence below.</p>';
+
       app.innerHTML = `
         <div class="card">
           <h2>Report</h2>
-          <p>
-            <a href="/api/investigations/${id}/report/export" style="color:#818CF8">Download JSON</a>
-            <button onclick="window.print()">Print / PDF</button>
-          </p>
-          ${findings}
+          <p><a href="/api/investigations/${id}/report/export" style="color:#818CF8">Download JSON</a>
+          <button onclick="window.print()">Print / PDF</button></p>
+          <p>${e(r.summary || '')}</p>
+          <p><small>
+            Investigated ${e(r.project_profile ? r.project_profile.framework || '' : '')}
+            ${r.project_profile && r.project_profile.required_php ? ' · requires PHP ' + e(r.project_profile.required_php) : ''}
+            ${r.project_profile && r.project_profile.required_laravel ? ' · Laravel ' + e(r.project_profile.required_laravel) : ''}
+            · generated ${e(r.generated_at || '')}
+          </small></p>
+        </div>
+        ${section('Confirmed findings', findings)}
+        ${section('Potential risks', (r.potential_issues || []).map(riskCard).join(''))}
+        ${section('Evidence correlation', corr.map(c => `
+          <div class="obs">
+            <h4>${e(c.finding_title || c.finding || 'Unlinked evidence')}</h4>
+            <p>${e(c.detail || '')}</p>
+            <p><small>${(c.evidence || []).map(n => e(n)).join('<br>')}</small></p>
+            <p><button class="ghost" onclick="gotoEvIds([${(c.evidence_ids || []).join(',')}])">Open evidence</button></p>
+          </div>`).join(''))}
+        ${section('Root-cause assessment', root.status
+          ? `<p><span class="badge" style="color:${root.status === 'established' ? '#22C55E' : '#F59E0B'}">${e(root.status)}</span></p><p>${e(root.explanation || '')}</p>` + ((root.needs || []).length ? `<p><small>Needed: ${root.needs.map(n => e(n)).join(' · ')}</small></p>` : '')
+          : '')}
+        ${section('Key observations', (r.observations || []).map(obsCard).join(''))}
+        <div class="card">
+          <h2>Missing information</h2>
+          <p>${(r.missing_information || []).map(m => '• ' + e(m)).join('<br>')}</p>
+          <h3>Recommended next steps</h3>
+          <p>${(r.recommendations || []).map(x => '• ' + e(x)).join('<br>') || 'None.'}</p>
           <h3>Verification checklist</h3>
           <p>${(r.verification_checklist || []).map(c => e(c)).join('<br>')}</p>
+        </div>
+        <div class="card">
+          <h2>AI analysis</h2>
+          <p>Status: ${e((r.ai_analysis || {}).status || 'not_configured')}</p>
+          <p>${e((r.ai_analysis || {}).note || '')}</p>
+        </div>
+        <details class="raw card">
+          <summary>Raw JSON report</summary>
           <pre>${e(JSON.stringify(r, null, 2))}</pre>
-        </div>`;
+        </details>`;
     }
 
     function openFindingsView(x) {

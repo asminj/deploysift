@@ -18,13 +18,23 @@ class MuseAdapter
 
     public function status(): array
     {
+        $key = config('services.muse.key');
+        $endpoint = config('services.muse.endpoint');
+        if ($key && $endpoint) {
+            $note = 'Muse credentials are configured. Every AI insight is validated against stored evidence IDs before use; ungrounded output is rejected.';
+        } elseif (! $key && ! $endpoint) {
+            $note = 'No Muse credentials are configured (MUSE_API_KEY and MUSE_API_ENDPOINT are both empty). Deterministic findings are the source of truth; no AI result is fabricated and no AI call is attempted.';
+        } elseif (! $key) {
+            $note = 'Muse endpoint is configured but MUSE_API_KEY is missing. Set it in the server environment, then re-run analysis.';
+        } else {
+            $note = 'Muse API key is present but MUSE_API_ENDPOINT is missing. Set it in the server environment, then re-run analysis.';
+        }
+
         return [
             'provider' => 'meta-muse',
             'model' => config('services.muse.model'),
             'status' => $this->configured() ? 'configured' : 'not_configured',
-            'note' => $this->configured()
-                ? 'Muse credentials are configured. Every AI insight is validated against stored evidence IDs before use; ungrounded output is rejected.'
-                : 'No Muse credentials are configured. Deterministic findings above are the source of truth; no AI result is fabricated.',
+            'note' => $note,
         ];
     }
 
