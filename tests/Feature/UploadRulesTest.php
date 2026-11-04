@@ -10,7 +10,7 @@ use Illuminate\Http\UploadedFile;
 use Tests\TestCase;
 class UploadRulesTest extends TestCase {
  use RefreshDatabase;
- private function investigation(): array { $w=Workspace::create(['name'=>'T']); $u=User::factory()->create(); $u->workspaces()->attach($w->id,['role'=>'owner']); $this->actingAs($u); return [Investigation::create(['workspace_id'=>$w->id,'name'=>'Rules','framework'=>'Laravel / PHP','status'=>'pending']),$u]; }
+ private function investigation(): array { $w=Workspace::create(['name'=>'T']); $u=User::factory()->create(); $u->workspaces()->attach($w->id,['role'=>'owner']); $this->actingAs($u); return [Investigation::create(['workspace_id'=>$w->id,'name'=>'Rules','framework'=>'Laravel / PHP','status'=>'draft']),$u]; }
  private function evidence(Investigation $i,string $category,string $name,string $content): void { EvidenceFile::create(['investigation_id'=>$i->id,'category'=>$category,'original_name'=>$name,'sha256'=>hash('sha256',$content),'size'=>strlen($content),'content'=>$content]); }
  private function diagnose(Investigation $i): Investigation { app(DiagnosticEngine::class)->run($i->fresh('evidence')); return $i->fresh('findings'); }
  public function test_missing_app_key_from_log_and_empty_env(): void {

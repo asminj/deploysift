@@ -37,7 +37,7 @@ Visit `http://127.0.0.1:8000`; Apache virtual hosts must point to `public/`.
 
 ## Safety and limitations
 
-Evidence must remain private and never be executed. Text ingestion redacts obvious password/secret/token assignments and SHA-256 de-duplicates evidence. ZIP archives are capped at 50 files and 5 MB extracted, with path-traversal and executable entries rejected. Diagnostics run inline under the `sync` queue driver and dispatch to `ProcessInvestigation` otherwise — run `php artisan queue:work` for async processing. Provider credentials stay server-side in `.env` (`MUSE_API_KEY`, `MUSE_API_ENDPOINT`, `MUSE_MODEL`) and no AI result may be fabricated.
+Evidence must remain private and never be executed. Text ingestion normalizes legacy encodings to UTF-8, redacts obvious password/secret/token assignments, and SHA-256 de-duplicates evidence. Authenticated API routes are rate-limited (60/min); login and registration are limited to 10 attempts per minute. ZIP archives are capped at 50 files and 5 MB extracted, with path-traversal and executable entries rejected. Diagnostics run inline under the `sync` queue driver and dispatch to `ProcessInvestigation` otherwise — run `php artisan queue:work` for async processing. Provider credentials stay server-side in `.env` (`MUSE_API_KEY`, `MUSE_API_ENDPOINT`, `MUSE_MODEL`) and no AI result may be fabricated.
 
 ## Meta Muse integration
 

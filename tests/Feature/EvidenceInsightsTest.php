@@ -13,7 +13,7 @@ class EvidenceInsightsTest extends TestCase {
  private const LOG = "[2026-11-04 09:14:22] production.ERROR: Composer detected issues in your platform: Your Composer dependencies require a PHP version \">= 8.3.0\". You are running 8.1.27. {\"exception\":\"[object] (RuntimeException(code: 0): Composer detected issues in your platform at /home/demo/public_html/vendor/composer/platform_check.php:24)\n[stacktrace]\n#0 /home/demo/public_html/vendor/autoload_real.php(23): require()";
  private const NETWORK = "GET /login\nStatus: 500 Internal Server Error\nGET /build/assets/app-D7K4P2.js\nStatus: 200 OK\nFailed to load application response: HTTP 500 for /login";
  private function setupUser(): array { $u=User::factory()->create(); $w=Workspace::create(['name'=>'Mine']); $u->workspaces()->attach($w->id,['role'=>'owner']); $this->actingAs($u); return [$u,$w]; }
- private function makeInv(Workspace $w): Investigation { return Investigation::create(['workspace_id'=>$w->id,'name'=>'Insight Test','framework'=>'Laravel / PHP','environment'=>'test','problem'=>'500 on login','status'=>'pending']); }
+ private function makeInv(Workspace $w): Investigation { return Investigation::create(['workspace_id'=>$w->id,'name'=>'Insight Test','framework'=>'Laravel / PHP','environment'=>'test','problem'=>'500 on login','status'=>'draft']); }
  private function evidence(Investigation $i,string $category,string $name,string $content): void { EvidenceFile::create(['investigation_id'=>$i->id,'category'=>$category,'original_name'=>$name,'sha256'=>hash('sha256',$content.$name),'size'=>strlen($content),'content'=>$content]); }
  public function test_a_composer_only_yields_observations_without_false_mismatch(): void {
   [$u,$w]=$this->setupUser(); $i=$this->makeInv($w);

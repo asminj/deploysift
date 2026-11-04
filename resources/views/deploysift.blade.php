@@ -77,6 +77,7 @@
   <main>
     <div class="sub" id="crumb">Dashboard</div>
     <h1 id="title">Every clue. One diagnosis.</h1>
+    <div class="sub" id="invctx" style="margin-top:-8px"></div>
     <p>
       <button onclick="create()">Start investigation</button>
       <button class="ghost" onclick="demo('php')">Demo: PHP 8.3 vs 8.1</button>
@@ -141,6 +142,7 @@
     }
 
     function nav(v) {
+      window._openSeq = (window._openSeq || 0) + 1;
       view = v;
       highlight = [];
       load();
@@ -231,6 +233,8 @@
       if (!selected || !confirm('Delete this investigation?')) return;
       await api('investigations/' + selected, { method: 'DELETE' });
       selected = null;
+      window._openId = undefined;
+      stopPoll();
       load();
     }
 
@@ -366,8 +370,45 @@
       }
     }
 
+    let pollTimer = null;
+    let pollId = null;
+
+    function stopPoll() {
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; pollId = null; }
+    }
+
+    function startPoll(id) {
+      stopPoll();
+      pollId = id;
+      let tries = 0;
+      pollTimer = setInterval(async () => {
+        try {
+          const s = await api('investigations/' + id);
+          if (s.status === 'completed') {
+            stopPoll();
+            if (selected === id) openI(id);
+          } else if (s.status === 'failed') {
+            stopPoll();
+            alert('Processing failed. Open the investigation and choose Run diagnostics to retry.');
+            if (selected === id) openI(id);
+          } else if (++tries >= 40) {
+            stopPoll();
+          }
+        } catch (err) {
+          // Transient errors keep the poll alive until the attempt limit.
+        }
+      }, 2500);
+    }
+
     async function processI() {
-      await api('investigations/' + selected + '/process', { method: 'POST', body: '{}' });
+      const r = await api('investigations/' + selected + '/process', { method: 'POST', body: '{}' });
+      if (r && !r.findings) {
+        app.innerHTML = '<div class="card"><h2>Processing…</h2>'
+          + '<p class="sub">Diagnostics are running in the background queue. This view updates automatically when results land.</p>'
+          + '<div class="prog"><div class="bar" style="width:40%"></div></div></div>';
+        startPoll(selected);
+        return;
+      }
       openI(selected);
     }
 
@@ -406,23 +447,62 @@
     }
 
     async function openI(id) {
+      if (window._openId !== undefined && window._openId !== id) stopPoll();
+      window._openId = id;
+      const _seq = (window._openSeq = (window._openSeq || 0) + 1);
+      const _fresh = () => _seq === window._openSeq;
       if (selected !== id) upQueue = [];
       selected = id;
       snapCat();
-      const x = await api('investigations/' + id);
+      let x;
+      try {
+        x = await api('investigations/' + id);
+      } catch (err) {
+        return openMissing(err);
+      }
+      if (!_fresh()) return;
       document.querySelector('#title').textContent = x.name;
+      if ((x.status === 'pending' || x.status === 'analyzing') && pollId !== id) startPoll(id);
+      const ictx = document.querySelector('#invctx');
+      if (ictx) ictx.textContent = 'Investigating: ' + x.name + ' (#' + x.id + ' · ' + x.status + ')';
 
-      if (view === 'ev') return openEvidenceView(x);
-      if (view === 'ai') return openAiView();
-      if (view === 'rep') return openReportView(id);
-      return openFindingsView(x);
+      try {
+        if (view === 'ev') return openEvidenceView(x);
+        if (view === 'ai') return openAiView();
+        if (view === 'rep') return openReportView(id);
+        return openFindingsView(x);
+      } catch (err) {
+        return openMissing(err);
+      }
+    }
+
+    function openEmpty(kind) {
+      const copy = {
+        rep: ['Reports', 'Select an investigation to view its diagnostic report, findings, and verification checklist.'],
+        ev: ['Evidence', 'Evidence belongs to an investigation. Select one to browse its uploaded files.'],
+        ai: ['AI Analysis', 'Select an investigation to run Meta Muse analysis against its evidence.'],
+      }[kind] || ['Browse', 'Select an investigation to continue.'];
+      document.querySelector('#title').textContent = copy[0];
+      app.innerHTML = '<div class="card"><h2>' + copy[0] + '</h2><p class="sub">' + copy[1] + '</p>'
+        + '<p><button onclick="nav(\'inv\')">Browse investigations</button></p></div>';
+    }
+
+    function openMissing(err) {
+      selected = null;
+      window._openId = undefined;
+      stopPoll();
+      document.querySelector('#title').textContent = 'Every clue. One diagnosis.';
+      app.innerHTML = '<div class="card"><h2>Investigation unavailable</h2><p class="sub">' + e((err && err.message) || 'Could not load this investigation. It may have been deleted or you may not have access.') + '</p>'
+        + '<p><button onclick="nav(\'inv\')">Browse investigations</button></p></div>';
     }
 
     async function openEvidenceView(x) {
+      const _s = window._openSeq;
       let ev = [];
       let evErr = '';
       try {
         ev = await api(`investigations/${x.id}/evidence`);
+        if (_s !== window._openSeq) return;
       } catch (err) {
         evErr = err.message || 'Could not load evidence.';
       }
@@ -463,10 +543,12 @@
     }
 
     async function openAiView() {
+      const _s = window._openSeq;
       const [a, r] = await Promise.all([
         api(`investigations/${selected}/ai`),
         api(`investigations/${selected}/report`),
       ]);
+      if (_s !== window._openSeq) return;
       const findings = r.findings || [];
       const obs = r.observations || [];
       const risks = r.potential_issues || [];
@@ -522,7 +604,9 @@
     }
 
     async function openReportView(id) {
+      const _s = window._openSeq;
       const r = await api(`investigations/${id}/report`);
+      if (_s !== window._openSeq) return;
       const root = r.root_cause_assessment || {};
       const corr = r.evidence_correlations || [];
 
@@ -641,10 +725,14 @@
     const NAV_IDS = { dash: 'n-dash', inv: 'n-inv', rep: 'n-rep', ev: 'n-ev', ai: 'n-ai', set: 'n-set' };
 
     async function load() {
+      const _clear = document.querySelector('#invctx');
+      if (_clear && !selected) _clear.textContent = '';
+      window._loadedOnce = true;
       document.querySelectorAll('aside a').forEach(a => a.classList.remove('on'));
       document.querySelector('#' + NAV_IDS[view])?.classList.add('on');
       document.querySelector('#crumb').textContent = VIEW_TITLES[view] || view;
       if (view === 'set') return openSettings();
+      if (!selected && (view === 'rep' || view === 'ev' || view === 'ai')) return openEmpty(view);
       if (selected && (view === 'inv' || view === 'ev' || view === 'ai' || view === 'rep')) return openI(selected);
 
       if (view === 'dash') {
@@ -683,7 +771,7 @@
     }
 
     // ---- Boot ------------------------------------------------------------------
-    (async () => { await loadWs(); await load(); })();
+    (async () => { await loadWs(); if (!window._loadedOnce) { window._loadedOnce = true; await load(); } })();
   </script>
 </body>
 </html>

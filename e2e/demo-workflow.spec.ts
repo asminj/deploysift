@@ -101,6 +101,7 @@ test('browser upload flow with validation and progress', async ({ browser, reque
   const page = await ctx.newPage();
   await page.goto('/');
   await page.waitForLoadState('networkidle');
+  await expect(page.locator('#authbox')).toContainText('@example.test');
   await page.waitForFunction(() => (document.querySelector('#ws')?.options.length ?? 0) > 0);
   await page.evaluate((id) => { selected = id; view = 'inv'; load(); }, invId);
   await expect(page.getByRole('heading', { name: 'Add evidence' })).toBeVisible();
@@ -121,5 +122,57 @@ test('browser upload flow with validation and progress', async ({ browser, reque
   const files = await (await request.get(`/api/investigations/${invId}/evidence`, { headers })).json();
   expect(files[0].original_name).toBe('laravel.log');
   expect(files[0].category).toBe('logs');
+  await ctx.close();
+});
+
+test('empty states guide to an investigation', async ({ browser, request }) => {
+  let headers = await csrfHeaders(request);
+  await request.post('/auth/register', { headers, data: { name: 'E2E Empty', email: `e2e-empty-${Date.now()}@example.test`, password: 'password123', password_confirmation: 'password123' } });
+  headers = await csrfHeaders(request);
+  const ctx = await browser.newContext({ storageState: await request.storageState() });
+  const page = await ctx.newPage();
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  await page.waitForFunction(() => (document.querySelector('#ws')?.options.length ?? 0) > 0);
+  for (const nav of ['Reports', 'Evidence', 'AI Analysis']) {
+    await page.locator('aside').getByText(nav, { exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Browse investigations' })).toBeVisible();
+  }
+  await page.getByRole('button', { name: 'Browse investigations' }).click();
+  await expect(page.getByRole('heading', { name: 'Investigations' })).toBeVisible();
+  await ctx.close();
+});
+
+test('invalid investigation id shows unavailable state', async ({ browser, request }) => {
+  let headers = await csrfHeaders(request);
+  await request.post('/auth/register', { headers, data: { name: 'E2E Gone', email: `e2e-gone-${Date.now()}@example.test`, password: 'password123', password_confirmation: 'password123' } });
+  const ctx = await browser.newContext({ storageState: await request.storageState() });
+  const page = await ctx.newPage();
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  await page.waitForFunction(() => (document.querySelector('#ws')?.options.length ?? 0) > 0);
+  await page.evaluate(() => { selected = 424242; view = 'inv'; load(); });
+  await expect(page.getByText('Investigation unavailable')).toBeVisible();
+  await ctx.close();
+});
+
+test('initial boot issues one request per endpoint', async ({ browser, request }) => {
+  let headers = await csrfHeaders(request);
+  await request.post('/auth/register', { headers, data: { name: 'E2E Boot', email: `e2e-boot-${Date.now()}@example.test`, password: 'password123', password_confirmation: 'password123' } });
+  const ctx = await browser.newContext({ storageState: await request.storageState() });
+  const page = await ctx.newPage();
+  const counts: Record<string, number> = {};
+  await page.route('**/api/**', async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    counts[path] = (counts[path] ?? 0) + 1;
+    await route.continue();
+  });
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  await page.waitForFunction(() => (document.querySelector('#ws')?.options.length ?? 0) > 0);
+  await page.waitForTimeout(1500);
+  expect(counts['/api/workspaces'] ?? 0).toBeLessThanOrEqual(1);
+  expect(counts['/api/me'] ?? 0).toBeLessThanOrEqual(1);
+  expect(counts['/api/dashboard'] ?? 0).toBeLessThanOrEqual(1);
   await ctx.close();
 });

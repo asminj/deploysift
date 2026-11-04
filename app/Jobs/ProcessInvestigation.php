@@ -15,8 +15,15 @@ class ProcessInvestigation implements ShouldQueue
     public function handle(DiagnosticEngine $engine): void
     {
         $investigation = Investigation::with('evidence')->findOrFail($this->investigationId);
-        $investigation->update(['status' => 'analyzing']);
-        $engine->run($investigation);
-        $investigation->events()->create(['type' => 'processed', 'message' => 'Diagnostics completed']);
+        try {
+            $investigation->update(['status' => 'analyzing']);
+            $engine->run($investigation);
+            $investigation->events()->create(['type' => 'processed', 'message' => 'Diagnostics completed']);
+        } catch (\Throwable $e) {
+            $investigation->update(['status' => 'failed']);
+            $investigation->events()->create(['type' => 'failed', 'message' => 'Diagnostics failed: '.$e->getMessage()]);
+            report($e);
+            throw $e;
+        }
     }
 }
