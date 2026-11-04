@@ -143,6 +143,48 @@ test('empty states guide to an investigation', async ({ browser, request }) => {
   await ctx.close();
 });
 
+test('clearing the selection returns to browse', async ({ browser, request }) => {
+  let headers = await csrfHeaders(request);
+  await request.post('/auth/register', { headers, data: { name: 'E2E Clear', email: `e2e-clear-${Date.now()}@example.test`, password: 'password123', password_confirmation: 'password123' } });
+  headers = await csrfHeaders(request);
+  const created = await request.post('/api/investigations', { headers, data: { name: `Clear Me ${Date.now()}`, workspace_id: (await (await request.get('/api/workspaces', { headers })).json())[0].id } });
+  const invId = (await created.json()).id;
+  const ctx = await browser.newContext({ storageState: await request.storageState() });
+  const page = await ctx.newPage();
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  await page.waitForFunction(() => (document.querySelector('#ws')?.options.length ?? 0) > 0);
+  await page.evaluate((id) => { selected = id; view = 'inv'; load(); }, invId);
+  await expect(page.locator('#invctx')).toContainText('Investigating:');
+  await page.locator('#clearSel').click();
+  await expect(page.getByRole('heading', { name: 'Investigations' })).toBeVisible();
+  await expect(page.locator('#invctx')).toBeEmpty();
+  await ctx.close();
+});
+
+test('completed AI run shows a view-result button', async ({ browser, request }) => {
+  let headers = await csrfHeaders(request);
+  await request.post('/auth/register', { headers, data: { name: 'E2E AI UI', email: `e2e-aiui-${Date.now()}@example.test`, password: 'password123', password_confirmation: 'password123' } });
+  headers = await csrfHeaders(request);
+  const workspace = (await (await request.get('/api/workspaces', { headers })).json())[0];
+  const created = await request.post('/api/investigations', { headers, data: { name: `AI UI ${Date.now()}`, workspace_id: workspace.id } });
+  const invId = (await created.json()).id;
+  await request.post(`/api/investigations/${invId}/evidence`, { headers, data: { category: 'project', name: 'composer.json', content: '{"require":{"php":"^8.3"}}' } });
+  await request.post(`/api/investigations/${invId}/process`, { headers, data: {} });
+  await request.post(`/api/investigations/${invId}/ai`, { headers, data: {} });
+  const ctx = await browser.newContext({ storageState: await request.storageState() });
+  const page = await ctx.newPage();
+  await page.goto('/');
+  await page.waitForLoadState('networkidle');
+  await page.waitForFunction(() => (document.querySelector('#ws')?.options.length ?? 0) > 0);
+  await page.evaluate((id) => { selected = id; view = 'ai'; load(); }, invId);
+  await expect(page.getByRole('button', { name: /view result/i })).toBeVisible();
+  await page.getByRole('button', { name: /view result/i }).click();
+  await expect(page.locator('#ai-result')).toBeVisible();
+  await expect(page.locator('#ai-result h4').first()).toBeVisible();
+  await ctx.close();
+});
+
 test('invalid investigation id shows unavailable state', async ({ browser, request }) => {
   let headers = await csrfHeaders(request);
   await request.post('/auth/register', { headers, data: { name: 'E2E Gone', email: `e2e-gone-${Date.now()}@example.test`, password: 'password123', password_confirmation: 'password123' } });

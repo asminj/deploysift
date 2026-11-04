@@ -1,0 +1,6 @@
+[2026-11-04 09:14:22] production.ERROR: Composer detected issues in your platform: Your Composer dependencies require a PHP version ">= 8.3.0". You are running 8.1.27. {"exception":"[object] (RuntimeException(code: 0): Composer detected issues in your platform: Your Composer dependencies require a PHP version \">= 8.3.0\". You are running 8.1.27. at /home/demo/public_html/vendor/composer/platform_check.php:24)
+[stacktrace]
+#0 /home/demo/public_html/vendor/composer/autoload_real.php(25): require()
+#1 /home/demo/public_html/vendor/autoload.php(22): ComposerAutoloaderInitDemo::getLoader()
+#2 /home/demo/public_html/public/index.php(13): require('/home/demo/publi...')
+#3 {main}

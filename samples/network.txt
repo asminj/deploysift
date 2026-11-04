@@ -1,0 +1,31 @@
+DeploySift synthetic browser network capture
+Captured: 2026-11-04 09:14:24 UTC
+Page: https://demo.example.test/login
+Browser: Chrome (synthetic example)
+
+Request 1
+GET /login
+Status: 500 Internal Server Error
+Content-Type: text/html; charset=UTF-8
+Remote Address: 203.0.113.25:443
+Timing: 184 ms
+
+Request 2
+GET /build/assets/app-D7K4P2.js
+Status: 200 OK
+Content-Type: application/javascript
+Timing: 42 ms
+
+Request 3
+GET /build/assets/app-A8M3Q1.css
+Status: 200 OK
+Content-Type: text/css
+Timing: 31 ms
+
+Console:
+Failed to load application response: HTTP 500 for /login
+
+Notes:
+- The login document request fails with HTTP 500.
+- Static JavaScript and CSS assets return HTTP 200.
+- This capture alone does not establish the root cause; correlate it with server logs and hosting configuration.

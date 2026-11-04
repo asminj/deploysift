@@ -1,0 +1,17 @@
+Hosting control panel — PHP configuration
+Account: demo-account (synthetic)
+Domain: demo.example.test
+Document root: /home/demo/public_html/public
+Selected PHP version: 8.1.27
+PHP handler: FPM application
+PHP status: Enabled
+Last configuration change: 2026-11-03 16:40 UTC
+
+Relevant settings:
+- PHP version selected for this domain: 8.1.27
+- PHP extensions: fileinfo, mbstring, openssl, pdo, tokenizer, xml, ctype, curl
+- Error display: Off
+- Error logging: On
+
+Note:
+This is a synthetic hosting-panel text extract for a demonstration. It contains no real hosting account, credentials, or personal information.

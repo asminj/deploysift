@@ -1,181 +1,206 @@
 # DeploySift
 
-**Every clue. One diagnosis.** DeploySift is evidence-based AI investigation for deployment failures. It correlates project requirements, hosting observations, application logs, and browser evidence into traceable findings without requiring SSH.
+**Every clue. One diagnosis.**
 
-## Implemented
+DeploySift is an evidence-first AI investigation platform that helps developers diagnose deployment failures by correlating project configuration, application logs, browser errors, and hosting-environment evidence. It transforms scattered technical clues into traceable observations, evidence-backed findings, remediation recommendations, and verification checklists.
 
-- Laravel 13, MySQL, and a responsive dark investigation workspace.
-- Investigation/evidence/finding/correlation/AI-run/report/event schema.
-- Deterministic PHP-version, database connection, Vite asset, and HTTP diagnostics.
-- Evidence IDs, expected/observed values, triggering rules, and qualitative confidence.
-- Three synthetic demos processed by the same diagnostic engine.
-- Workspace-scoped auth with owner/member/viewer policies on every evidence and report API.
-- Dashboard metrics from live records, evidence listing/removal, investigation delete with confirmation.
-- One-click demo launch (`POST /api/demo/{php,database,vite}`), JSON report export, honest `not_configured` AI status.
-- Reports with per-finding recommended actions, a verification checklist, and clickable finding-to-evidence navigation plus a print stylesheet for PDF via the browser.
-- Enriched deterministic analysis: per-evidence observations, potential risks for partial evidence, evidence correlations, root-cause assessment, and structured missing-information guidance — all in the JSON report alongside the raw data.
-- AI Analysis page with overview counts, project understanding, observation cards, risk cards with remediation, missing-evidence list, and honest provider status with one-click live analysis when configured.
-- Browser upload UI: drag-and-drop, file picker, multi-file queue with per-file progress, validation feedback, retry, and removal.
-- Ten deterministic rule families: PHP version, database connection, Vite assets, missing APP_KEY, Composer platform conflicts, storage permissions, document-root mismatch, browser JS exceptions, HTTP 403 assets, HTTP 404 assets — every finding carries evidence references, supporting observations, verification steps, and correlation links.
+![PHP 8.3](https://img.shields.io/badge/PHP-8.3-777BB4) ![Laravel 13](https://img.shields.io/badge/Laravel-13-FF2D20) ![MySQL 8](https://img.shields.io/badge/MySQL-8-4479A1) ![PHPUnit](https://img.shields.io/badge/PHPUnit-tested-3DDC84) ![Playwright](https://img.shields.io/badge/Playwright-e2e-2EAD33)
 
-## Run locally
+Built for the Meta Global AI Developer Hackathon 2026.
 
-Start WAMP Apache and MySQL, configure `.env` with `DB_DATABASE=stackora`, `DB_USERNAME=root`, and then run:
+## The problem
 
-```powershell
-php artisan migrate:fresh --seed
-php artisan serve
-```
+Deployment failures are hard to diagnose because the relevant information is scattered across project configuration, Composer dependencies, application logs, browser network errors, hosting control panels, and runtime configuration. Without SSH access — common on shared hosting, Plesk, and managed platforms — developers are left guessing which layer broke.
 
-Requires PHP 8.3 with the `pdo_mysql`, `mbstring`, and `openssl` extensions, plus a running MySQL server. With WAMP, either add `C:\wamp64\bin\php\php8.3.28` to `PATH` or substitute `C:\wamp64\bin\php\php8.3.28\php.exe` for `php` below. Composer lives in `%APPDATA%\Composer` if it is not on `PATH`; use system `npm` for frontend builds.
+DeploySift brings these evidence sources together in one investigation: upload what you have, get deterministic parsing and cross-source correlation immediately, and optional Meta Muse reasoning on top — every conclusion linked back to the evidence that supports it.
 
-Visit `http://127.0.0.1:8000`; Apache virtual hosts must point to `public/`.
+## Key capabilities
 
-## API
-
-`GET /api/dashboard`, `GET|POST /api/investigations`, `GET|DELETE /api/investigations/{investigation}`, `GET /api/investigations/{investigation}/evidence`, `POST /api/investigations/{investigation}/evidence`, `DELETE /api/investigations/{investigation}/evidence/{evidence}`, `POST /api/investigations/{investigation}/process`, `GET /api/investigations/{investigation}/report`, `GET /api/investigations/{investigation}/report/export`, `GET /api/investigations/{investigation}/ai`, `POST /api/investigations/{investigation}/ai`, and `POST /api/demo/{php,database,vite}`. All investigation APIs require sign-in and workspace membership.
-
-## Safety and limitations
-
-Evidence must remain private and never be executed. Text ingestion normalizes legacy encodings to UTF-8, redacts obvious password/secret/token assignments, and SHA-256 de-duplicates evidence. Authenticated API routes are rate-limited (60/min); login and registration are limited to 10 attempts per minute. ZIP archives are capped at 50 files and 5 MB extracted, with path-traversal and executable entries rejected. Diagnostics run inline under the `sync` queue driver and dispatch to `ProcessInvestigation` otherwise — run `php artisan queue:work` for async processing. Provider credentials stay server-side in `.env` (`MUSE_API_KEY`, `MUSE_API_ENDPOINT`, `MUSE_MODEL`) and no AI result may be fabricated.
+- Multi-source evidence upload (project files, logs, hosting panels/screenshots, browser exports, ZIP archives)
+- Technical evidence extraction with per-file facts (PHP constraints, Laravel version, log exceptions, HTTP statuses, handler, extensions)
+- Laravel/PHP deployment diagnostics (10 deterministic rule families)
+- Browser error interpretation and hosting configuration interpretation
+- Evidence correlation across sources with supporting-evidence links
+- Root-cause assessment (`established` vs `not_established` — never forced)
+- Evidence-linked findings with severity, expected vs observed, and triggering rule
+- Missing-information detection and potential-issue analysis for partial evidence
+- Remediation recommendations and verification checklists per finding
+- Investigation report generation with JSON export and browser print/PDF
+- Workspace-scoped authentication with owner/member/viewer policies
+- Honest AI status: `configured` / `not_configured` / `skipped` / `invalid` / `failed` — never fabricated
 
 ## Meta Muse integration
 
-Verified live against `https://api.meta.ai` with `muse-wonder-1.0` over the Responses API (`POST /v1/responses`, Bearer auth, 60 s timeout, 2 retries, `store: false`, low reasoning effort): the adapter posts a redacted evidence package, demands strict-JSON insights with a fixed confidence scale, and rejects any response whose `evidence_ids` do not match stored evidence. Token usage per call is recorded on the `ai_analysis_runs` row. Screenshot evidence (PNG/JPG/WebP, up to 3 files under 2 MB) is attached as base64 `input_image` parts. Without credentials the endpoint honestly reports `not_configured` and records a `skipped` run. Outbound TLS uses the Mozilla CA bundle shipped at `resources/cacert.pem` (applied automatically per request), so any PHP build with `curl` + `openssl` works. As a belt-and-braces alternative, WAMP PHP can also point `curl.cainfo` and `openssl.cafile` at `extras\ssl\cacert.pem` in its `php.ini`.
+Meta Muse (`muse-wonder-1.0` via `POST /v1/responses`) contributes **interpretation only** — it never replaces deterministic diagnosis:
 
-## End-to-end tests
+| Layer | Source | Role |
+|---|---|---|
+| Deterministic diagnostics | `DiagnosticEngine` rules | Confirmed findings with evidence IDs, severity, expected/observed |
+| Muse-generated interpretations | Responses API, strict-JSON contract | Hypotheses and cross-source explanations, each required to cite real evidence IDs |
+| Evidence correlation | Deterministic relationships | Which evidence supports which finding |
+| Final findings | Deterministic + validated AI | Only validated output is shown; anything ungrounded is rejected |
+
+What the adapter sends: a redacted evidence package (facts + finding titles, never raw secrets), plus up to 3 screenshots as base64 `input_image` parts. What it enforces on return: valid JSON, a fixed confidence scale (`verified observation`, `strongly supported inference`, `possible explanation`, `missing information`, `contradictory evidence`), and evidence IDs that must match stored evidence — otherwise the run is recorded as `invalid` and discarded. Timeouts (60 s), retries, and token usage are recorded per run in `ai_analysis_runs` with `store: false`.
+
+If no credentials are configured, analysis is skipped honestly (`not_configured`) and the deterministic pipeline carries the full report — no AI result is ever invented. SAM 3.1 and Muse Voice Transcribe are **not** integrated.
+
+## How DeploySift works
+
+```mermaid
+flowchart TD
+    A[Evidence Upload] --> B[File Validation and Security]
+    B --> C[Evidence Extraction]
+    C --> D[Technical Observations]
+    D --> E[Muse Multimodal Interpretation]
+    D --> F[Evidence Correlation]
+    F --> G[Diagnostic Rules]
+    G --> H[Findings and Recommendations]
+    H --> I[Investigation Report]
+    E --> H
+```
+
+Upload (`POST /api/.../upload`, 10 MB cap, extension allowlist, ZIP traversal/executable caps, secret redaction, UTF-8 normalization, SHA-256 dedup, private storage) → deterministic extraction into per-evidence facts → observations, potential issues, and missing-evidence hints derived from those facts → optional Muse interpretation validated against evidence IDs → correlation links findings to evidence → reports with recommendations, verification steps, and export.
+
+## Demonstration scenario
+
+Synthetic PHP-version incompatibility, processed end-to-end (seeded via `php artisan db:seed`, or POST `/api/demo/php`):
+
+| Evidence | Observation |
+|---|---|
+| `composer.json` | Requires PHP `^8.3` |
+| `laravel.log` | Runtime reports PHP 8.1.27 (`platform_check.php`) |
+| `network.txt` | Login request returns HTTP 500 |
+| `hosting-panel.txt` | Hosting configured for PHP 8.1.27 |
+
+Expected diagnosis: **the hosting PHP runtime is incompatible with the project's declared PHP requirement** — connected across all four sources with evidence IDs on every link. Note what DeploySift does *not* do: a lone `composer.json` yields observations and a *potential* hosting risk, but explicitly states the runtime is unverified — no mismatch is claimed without hosting evidence.
+
+The exact files above ship in [`samples/`](samples/) with upload instructions in [`samples/README.md`](samples/README.md) — upload them through the browser UI or the evidence API to reproduce this diagnosis on any local instance.
+
+## Screenshots and demo video
+
+Genuine application screenshots captured headless against the running app:
+
+- [Dashboard](demo/screenshots/dashboard.png) — live metrics and recent investigations
+- [Investigation](demo/screenshots/investigation.png) — findings with linked evidence
+- [Evidence explorer](demo/screenshots/evidence.png) — upload queue and evidence list
+- [AI analysis](demo/screenshots/ai-analysis.png) — overview, observations, interpretation
+- [Report](demo/screenshots/report.png) — sections, recommendations, verification checklist
+
+Demo video: not yet recorded. Suggested 90-second script — (1) launch the PHP 8.3 vs 8.1 demo, (2) drag in one more log file, (3) run AI analysis and open an evidence link, (4) open the report and download JSON. Record at 1080p against a seeded local instance.
+
+## Technology stack
+
+Verified in this repository (see `composer.json`, `package.json`, `config/`, `database/migrations/`):
+
+| Technology | Version / role |
+|---|---|
+| PHP | ^8.3 (developed and verified on 8.3.28) |
+| Laravel | ^13.17 REST API, Blade views, Eloquent, database queue |
+| MySQL | 8.x primary store (SQLite in-memory for tests) |
+| Frontend | Server-rendered Blade + vanilla JavaScript + hand-written CSS (dark SaaS theme); no framework build step required |
+| Vite 8 + Tailwind CSS 4 | Present in `devDependencies`; the UI does not depend on compiled assets |
+| PHPUnit 12 | 54 tests, 297 assertions (`php artisan test`) |
+| Playwright 1.64 | 9 end-to-end browser tests (`npm run test:e2e`), incl. a live Muse call |
+| Meta Muse API | `muse-wonder-1.0` via the Responses API (`App\Services\MuseAdapter`) |
+| Composer 2 / Node 18+ / npm | Dependency management and e2e/build tooling |
+
+## System requirements
+
+- PHP 8.3 with extensions: `pdo_mysql`, `mbstring`, `openssl`, `curl`, `fileinfo`, `zip`, `sodium` (verify: `php -m`)
+- Composer 2.x and Node.js 18+ with npm (npm only needed for e2e tests and the optional asset build)
+- MySQL 8.x with a dedicated database and user
+- Writable `storage/` and `bootstrap/cache/` directories
+- A queue worker (`php artisan queue:work`) for asynchronous diagnostics; without one, `process` requests stay `pending` until a worker runs
+- Outbound HTTPS for Meta Muse calls (optional — deterministic diagnostics work fully offline)
+
+## Installation and setup
 
 ```powershell
-npm install
-npm run test:e2e
+git clone <your-fork-url> deploysift
+cd deploysift
+composer install
+Copy-Item .env.example .env   # Windows; or: cp .env.example .env
+php artisan key:generate
 ```
 
-The suite boots `C:\wamp64\bin\php\php8.3.28\php.exe artisan serve` itself and runs the full browser demo workflow (register, demo launch, findings, report, export, cleanup) plus an upload flow (validation error, retry, successful upload) against a local MySQL `stackora` database. Stop any server already on port 8000 first, or the run waits for its own server. API routes are session-authenticated with CSRF protection, so API clients must send `Accept: application/json` with the `X-XSRF-TOKEN` header.
-
-## Production deployment runbook
-
-### 1. Server prerequisites
-
-- Windows Server (or Windows 10/11) with WAMP/XAMPP, or any host with PHP 8.3, Apache 2.4, and MySQL 8.
-- Outbound HTTPS for Meta Muse calls (or run with AI disabled — deterministic diagnostics work offline).
-
-### 2. Apache virtual host configuration
-
-```apache
-<VirtualHost *:80>
-    ServerName deploysift.example.com
-    DocumentRoot "C:/wamp64/www/DeploySift/public"
-    <Directory "C:/wamp64/www/DeploySift/public">
-        Options -Indexes +FollowSymLinks
-        AllowOverride All
-        Require all granted
-    </Directory>
-</VirtualHost>
-```
-
-Replace `deploysift.example.com` and the paths with your own. For HTTPS, terminate TLS at Apache (see §11) and keep this vhost as a redirect.
-
-### 3. Laravel public directory configuration
-
-The document root MUST be the `public/` directory, never the project root. Verify with a request to `/up` (health) and a direct asset URL; both must resolve. The diagnostic engine flags document roots that do not end in `public/`.
-
-### 4. PHP extensions
-
-Required: `pdo_mysql`, `mbstring`, `openssl`, `curl`, `fileinfo`, `zip`, `sodium`. With WAMP PHP, confirm with `php -m` and enable the CA bundle for TLS:
-
-```ini
-curl.cainfo = "C:\wamp64\bin\php\php8.3.28\extras\ssl\cacert.pem"
-openssl.cafile = "C:\wamp64\bin\php\php8.3.28\extras\ssl\cacert.pem"
-```
-
-### 5. Environment configuration
-
-Copy `.env.example` to `.env` and set `APP_KEY` (`php artisan key:generate`), `APP_URL`, database credentials, mail driver, and (optionally) `MUSE_API_KEY`, `MUSE_API_ENDPOINT`, `MUSE_MODEL`, plus `GOOGLE_*`/`GITHUB_*` OAuth credentials. Never commit `.env`; never expose keys to the frontend.
-
-### 6. Database setup
-
-Create the database and user with least privilege, then migrate and seed:
+Edit `.env`: set `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` (default database name is `stackora`), then:
 
 ```powershell
-php artisan migrate:fresh --seed
+php artisan migrate --force   # use migrate:fresh --seed only to reset demo data
+php artisan db:seed           # loads the three synthetic demo scenarios
+npm install                   # only needed for e2e tests
 ```
 
-`migrate:fresh` drops all tables — use plain `php artisan migrate` for upgrades on live data.
+Optional: set `MUSE_API_KEY`, `MUSE_API_ENDPOINT` (`https://api.meta.ai`), `MUSE_MODEL=muse-wonder-1.0` to enable AI analysis. Optional: `GOOGLE_*` / `GITHUB_*` for OAuth login.
 
-### 7. Storage permissions
+On Windows with WAMP, either add `C:\wamp64\bin\php\php8.3.28` to `PATH` or substitute that full path for `php` in every command below.
 
-Ensure `storage/` and `bootstrap/cache/` are writable by the web-server user:
+## Environment configuration
+
+| Variable | Purpose | Required |
+|---|---|---|
+| `APP_NAME` | Product name shown in UI and mail | Yes (default `DeploySift`) |
+| `APP_KEY` | Encryption key (`php artisan key:generate`) | Yes |
+| `APP_URL` | Public base URL | Yes for production |
+| `DB_CONNECTION`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` | MySQL connection | Yes |
+| `SESSION_DRIVER` / `CACHE_STORE` / `QUEUE_CONNECTION` | `database` recommended (file/array for local experiments) | Yes |
+| `MUSE_API_KEY`, `MUSE_API_ENDPOINT`, `MUSE_MODEL` | Meta Muse credentials, endpoint, model id | Only for AI analysis |
+| `GOOGLE_CLIENT_ID/SECRET/REDIRECT_URI`, `GITHUB_*` | OAuth login providers | Only for OAuth |
+| `MAIL_*` | Mail transport (defaults to `log`) | Only for real mail |
+| `FILESYSTEM_DISK` | Must remain `local` — evidence must never be served publicly | Yes |
+
+Never commit real keys, tokens, or passwords. `.env` is gitignored; only `.env.example` (empty values) is committed.
+
+## Running the application
 
 ```powershell
-icacls storage /grant "IIS_IUSRS:(OI)(CI)F"  # or the Apache service account
-icacls bootstrap\cache /grant "IIS_IUSRS:(OI)(CI)F"
+php artisan serve                 # http://127.0.0.1:8000
+php artisan queue:work --tries=3  # required for async diagnostics; otherwise process stays pending
+php artisan route:list --path=api # 17 API routes
+php artisan test                  # full PHPUnit suite
+npm run test:e2e                  # Playwright suite (starts its own server; one test uses live Muse)
+npm run build                     # optional asset build (UI needs no compiled assets to run)
 ```
 
-DeploySift only reads and writes these directories; it never changes permissions itself.
-
-### 8. Queue worker setup
-
-`QUEUE_CONNECTION=database` by default. Expensive diagnostics dispatch to `ProcessInvestigation`; run at least one worker:
+## Running tests
 
 ```powershell
-php artisan queue:work --tries=3
+php artisan test                  # 54 tests, 297 assertions (SQLite, no external services)
+php artisan test --filter=UploadRulesTest
+npm run test:e2e                  # 9 browser tests incl. one live Muse analysis (~60 s, uses MUSE_* creds)
 ```
 
-### 9. Supervisor configuration
+The e2e suite boots its own server, registers users, runs the full demo workflow, uploads files, and verifies the live AI response shape — never its specific wording.
 
-On Windows, run the worker as a service (NSSM) or scheduled task with restart-on-failure:
+## Security and limitations
 
-```powershell
-php artisan queue:work --sleep=3 --tries=3 --max-time=3600
-```
+Implemented and tested:
 
-Restart the worker on every deploy (`php artisan queue:restart`).
+- Workspace-scoped authorization on every investigation, evidence, upload, processing, AI, and report endpoint (cross-user access returns 403/404).
+- Session authentication with CSRF protection; login/registration throttled (10/min); authenticated API throttled (60/min).
+- Private evidence storage (`storage/app/private`, never linked or served); ZIP path-traversal and executable rejection; 50-file / 5 MB extraction caps; 10 MB upload limit with extension allowlist.
+- Secrets redacted before storage and before any AI call; uploaded code is parsed as text, never executed.
+- AI output validated against stored evidence IDs; ungrounded responses rejected and logged; `store: false` on Muse calls; redacted inputs persisted for audit.
+- No known exposed secrets: `.env` is gitignored and the repo contains no real keys.
 
-### 10. Scheduler configuration
+Limitations (no production security audit has been performed):
 
-Add a minutely task for `schedule:run`:
+- Hosting screenshots are interpreted by Meta Muse when configured; without it the app records a placeholder and makes no claims about unseen values.
+- Document-root detection trusts hosting-panel text as observed, not verified.
+- Contradiction handling reports conflicts explicitly; it is not automated refutation.
+- SAM 3.1 segmentation and voice transcription are not integrated.
+- Anonymous API flood is answered with cheap 401s; per-user throttling applies after authentication.
 
-```powershell
-* * * * * php C:\wamp64\www\DeploySift\artisan schedule:run >> NUL 2>&1
-```
+## Project roadmap
 
-(Use Task Scheduler on Windows with a 1-minute trigger.)
+Implemented: end-to-end investigation workflow, 10 deterministic rule families, evidence correlation, AI integration with validation, auth + workspace isolation, upload UI with ZIP safety, dashboard metrics, reporting with export/print, full test coverage, production runbook.
 
-### 11. HTTPS setup
+In progress: nothing — the current milestone is complete and green.
 
-Terminate TLS at Apache with a Let's Encrypt (or equivalent) certificate and redirect port 80 to 443. Set `APP_URL=https://...`, `SESSION_SECURE_COOKIE=true`, and `SESSION_DOMAIN` to your host.
+Planned (not started): SAM 3.1 screenshot segmentation evaluation, Muse voice transcription for incident intake, user notifications, user profile management.
 
-### 12. Private file storage
+## License and acknowledgements
 
-Evidence uses the `local` disk under `storage/app/private/` and is never linked to `public/`. Do not run `storage:link` for evidence, and do not serve `storage/` from Apache.
+No LICENSE file is present in this repository — all rights are reserved by default. Add an explicit open-source license before public release if open distribution is intended.
 
-### 13. Backup and recovery
-
-- Nightly MySQL dump plus `storage/app/` (evidence files). Test restores quarterly.
-- Reports regenerate deterministically from stored evidence (`GET /api/investigations/{id}/report`), so the database plus evidence files is a complete backup.
-
-### 14. Logging and monitoring
-
-`LOG_CHANNEL=stack` writes `storage/logs/laravel.log`. Ship it to your log aggregator and alert on `failed` `ai_analysis_runs` rows and repeated 419/422 upload rejections, which indicate client or integration issues.
-
-### 15. Troubleshooting
-
-- `could not find driver`: the serving PHP lacks `pdo_mysql` — serve with the WAMP PHP that has it.
-- `Route [login] not defined` on `/api/*`: session middleware missing from the `api` group — ensure `bootstrap/app.php` keeps the session/CSRF prepend.
-- 419 on uploads: missing/rotated `X-XSRF-TOKEN` — refresh the token after login/register.
-- cURL error 60 to `api.meta.ai`: missing CA bundle — see §4.
-- `invalid` AI runs: the model response failed evidence validation; deterministic findings stand — inspect the run's `output.raw`.
-
-### 16. Known limitations
-
-- Hosting screenshots are interpreted by Meta Muse when configured; without it the engine records a placeholder and makes no claim about unseen values.
-- Document-root detection trusts hosting-panel text as observed, not verified, and says so in each finding.
-- Contradictory-evidence detection is explicit absence reporting, not automated refutation.
-- SAM 3.1 segmentation and voice transcription are not integrated (optional per spec).
-
-### 17. Security considerations
-
-- Session auth with CSRF on all state-changing API routes; workspace policies on every investigation, evidence, and report endpoint; cross-user access returns 403.
-- Uploads: 10 MB limit, extension allowlist, ZIP traversal/executable caps, secrets redacted before storage and before any AI call, private storage only, never executed.
-- AI: `store: false` on Responses calls, redacted inputs persisted for audit, strict evidence-ID validation with rejection of ungrounded output.
-- Keep `APP_DEBUG=false` in production and review `storage/logs` permissions.
+Built with [Laravel](https://laravel.com), tested with [PHPUnit](https://phpunit.de) and [Playwright](https://playwright.dev). AI analysis by the [Meta Muse API](https://dev.meta.ai) (`muse-wonder-1.0`). See [SUBMISSION.md](SUBMISSION.md) for the hackathon summary and [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for production deployment.

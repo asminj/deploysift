@@ -154,6 +154,25 @@
       load();
     }
 
+    function clearSelection() {
+      stopPoll();
+      selected = null;
+      window._openId = undefined;
+      document.querySelector('#title').textContent = 'Every clue. One diagnosis.';
+      const ictx = document.querySelector('#invctx');
+      if (ictx) ictx.innerHTML = '';
+      load();
+    }
+
+    document.addEventListener('keydown', ev => {
+      if (ev.key !== 'Escape') return;
+      const tag = (document.activeElement && document.activeElement.tagName) || '';
+      if (/^(INPUT|TEXTAREA|SELECT)$/.test(tag)) return;
+      const modal = document.querySelector('#modal');
+      if (modal && modal.style.display === 'flex') { closeModal(); return; }
+      if (selected) clearSelection();
+    });
+
     // ---- Workspace + auth ----------------------------------------------
     async function loadWs() {
       try {
@@ -464,7 +483,7 @@
       document.querySelector('#title').textContent = x.name;
       if ((x.status === 'pending' || x.status === 'analyzing') && pollId !== id) startPoll(id);
       const ictx = document.querySelector('#invctx');
-      if (ictx) ictx.textContent = 'Investigating: ' + x.name + ' (#' + x.id + ' · ' + x.status + ')';
+      if (ictx) ictx.innerHTML = '<span>Investigating: <b>' + e(x.name) + '</b> (#' + x.id + ' · ' + e(x.status) + ')</span> <button id="clearSel" class="ghost" style="padding:2px 10px;font-size:12px" onclick="clearSelection()" title="Clear selection">✕</button>';
 
       try {
         if (view === 'ev') return openEvidenceView(x);
@@ -491,6 +510,8 @@
       selected = null;
       window._openId = undefined;
       stopPoll();
+      const ictx = document.querySelector('#invctx');
+      if (ictx) ictx.innerHTML = '';
       document.querySelector('#title').textContent = 'Every clue. One diagnosis.';
       app.innerHTML = '<div class="card"><h2>Investigation unavailable</h2><p class="sub">' + e((err && err.message) || 'Could not load this investigation. It may have been deleted or you may not have access.') + '</p>'
         + '<p><button onclick="nav(\'inv\')">Browse investigations</button></p></div>';
@@ -539,8 +560,23 @@
       } catch (err) {
         alert(err.message || 'AI analysis failed.');
       }
-      openAiView();
+      await openAiView();
+      const target = document.querySelector('#ai-result');
+      if (target) target.scrollIntoView({ behavior: 'smooth' });
     }
+
+    function scrollToAiResult() {
+      const target = document.querySelector('#ai-result');
+      if (target) target.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    const aiInsightCard = (ins) => `
+      <div class="obs" style="border-left-color:#818CF8">
+        <h4>${e(ins.title || 'AI insight')}</h4>
+        <p>${e(ins.explanation || '')}</p>
+        <p><small>Confidence: ${e(ins.confidence || 'unknown')}</small></p>
+        ${((ins.evidence_ids || []).length ? `<p><button class="ghost" onclick="gotoEvIds([${(ins.evidence_ids || []).join(',')}])">View supporting evidence</button></p>` : '<p><small>No linked evidence — treat as a hypothesis, not a finding.</small></p>')}
+      </div>`;
 
     async function openAiView() {
       const _s = window._openSeq;
@@ -557,8 +593,10 @@
       const ai = r.ai_analysis || {};
       const latest = ai.latest_run || null;
 
+      const completedRun = (a.runs || []).filter(x => x && x.state === 'completed' && x.output && Array.isArray(x.output.insights) && x.output.insights.length).sort((x, y) => y.id - x.id)[0];
+      const completedInsights = completedRun ? completedRun.output.insights : [];
       const aiBlock = a.status === 'configured'
-        ? `<p><button id="ai-run" onclick="runAiAnalysis()">Run AI analysis</button></p>
+        ? `<p><button id="ai-run" onclick="runAiAnalysis()">Run AI analysis</button>${completedInsights.length ? ' <button class="ghost" onclick="scrollToAiResult()">View result ↓</button>' : ''}</p>
            ${latest ? `<p><small>Latest run #${latest.id}: ${e(latest.state)}${latest.state === 'completed' ? ' · ' + latest.insights + ' insight(s)' : ''}${latest.error ? ' — ' + e(latest.error) : ''}</small></p>` : '<p><small>No AI runs yet for this investigation.</small></p>'}`
         : `<p><span class="badge" style="color:#F59E0B">AI unavailable</span></p>`;
 
@@ -600,7 +638,8 @@
           <p>Status: ${e(a.status)} (${e(a.provider || 'meta-muse')})</p>
           <p>${e(a.note)}</p>
           ${aiBlock}
-        </div>`;
+        </div>
+        ${completedInsights.length ? `<div class="card" id="ai-result"><h2>AI result — run #${completedRun.id}</h2>${completedInsights.map(aiInsightCard).join('')}</div>` : ''}`;
     }
 
     async function openReportView(id) {

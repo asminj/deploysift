@@ -8,16 +8,13 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 class EvidenceInsightsTest extends TestCase {
  use RefreshDatabase;
- private const COMPOSER = '{"name":"demo/laravel-deployment","require":{"php":"^8.3","laravel/framework":"^12.0","laravel/tinker":"^2.10"},"require-dev":{"phpunit/phpunit":"^11.0"},"scripts":{"post-autoload-dump":["Illuminate\\Foundation\\ComposerScripts::postAutoloadDump"]}}';
- private const HOSTING = "Hosting control panel\nDomain: demo.example.test\nDocument root: /home/demo/public_html/public\nSelected PHP version: 8.1.27\nPHP handler: FPM application\nPHP extensions: fileinfo, mbstring, openssl, pdo, tokenizer, xml, ctype, curl";
- private const LOG = "[2026-11-04 09:14:22] production.ERROR: Composer detected issues in your platform: Your Composer dependencies require a PHP version \">= 8.3.0\". You are running 8.1.27. {\"exception\":\"[object] (RuntimeException(code: 0): Composer detected issues in your platform at /home/demo/public_html/vendor/composer/platform_check.php:24)\n[stacktrace]\n#0 /home/demo/public_html/vendor/autoload_real.php(23): require()";
- private const NETWORK = "GET /login\nStatus: 500 Internal Server Error\nGET /build/assets/app-D7K4P2.js\nStatus: 200 OK\nFailed to load application response: HTTP 500 for /login";
+ private function sample(string $filename): string { return (string) file_get_contents(base_path('samples/'.$filename)); }
  private function setupUser(): array { $u=User::factory()->create(); $w=Workspace::create(['name'=>'Mine']); $u->workspaces()->attach($w->id,['role'=>'owner']); $this->actingAs($u); return [$u,$w]; }
  private function makeInv(Workspace $w): Investigation { return Investigation::create(['workspace_id'=>$w->id,'name'=>'Insight Test','framework'=>'Laravel / PHP','environment'=>'test','problem'=>'500 on login','status'=>'draft']); }
  private function evidence(Investigation $i,string $category,string $name,string $content): void { EvidenceFile::create(['investigation_id'=>$i->id,'category'=>$category,'original_name'=>$name,'sha256'=>hash('sha256',$content.$name),'size'=>strlen($content),'content'=>$content]); }
  public function test_a_composer_only_yields_observations_without_false_mismatch(): void {
   [$u,$w]=$this->setupUser(); $i=$this->makeInv($w);
-  $this->evidence($i,'project','composer.json',self::COMPOSER);
+  $this->evidence($i,'project','composer.json',$this->sample('composer.json'));
   $this->actingAs($u)->postJson("/api/investigations/{$i->id}/process")->assertOk();
   $report=$this->actingAs($u)->getJson("/api/investigations/{$i->id}/report")->assertOk()->json();
   $this->assertCount(0,$report['findings']);
@@ -32,10 +29,10 @@ class EvidenceInsightsTest extends TestCase {
  }
  public function test_b_full_scenario_correlates_all_evidence(): void {
   [$u,$w]=$this->setupUser(); $i=$this->makeInv($w);
-  $this->evidence($i,'project','composer.json',self::COMPOSER);
-  $this->evidence($i,'hosting','hosting-panel.txt',self::HOSTING);
-  $this->evidence($i,'logs','laravel.log',self::LOG);
-  $this->evidence($i,'browser','network.txt',self::NETWORK);
+  $this->evidence($i,'project','composer.json',$this->sample('composer.json'));
+  $this->evidence($i,'hosting','hosting-panel.txt',$this->sample('hosting-panel.txt'));
+  $this->evidence($i,'logs','laravel.log',$this->sample('laravel.log'));
+  $this->evidence($i,'browser','network.txt',$this->sample('network.txt'));
   $this->actingAs($u)->postJson("/api/investigations/{$i->id}/process")->assertOk();
   $report=$this->actingAs($u)->getJson("/api/investigations/{$i->id}/report")->assertOk()->json();
   $ids=array_column($report['findings'],'identifier');
@@ -55,7 +52,7 @@ class EvidenceInsightsTest extends TestCase {
  }
  public function test_c_network_only_explains_without_root_cause(): void {
   [$u,$w]=$this->setupUser(); $i=$this->makeInv($w);
-  $this->evidence($i,'browser','network.txt',self::NETWORK);
+  $this->evidence($i,'browser','network.txt',$this->sample('network.txt'));
   $this->actingAs($u)->postJson("/api/investigations/{$i->id}/process")->assertOk();
   $report=$this->actingAs($u)->getJson("/api/investigations/{$i->id}/report")->assertOk()->json();
   $this->assertCount(0,$report['findings']);
@@ -76,7 +73,7 @@ class EvidenceInsightsTest extends TestCase {
  }
  public function test_e_ai_unavailable_keeps_deterministic_report(): void {
   [$u,$w]=$this->setupUser(); $i=$this->makeInv($w);
-  $this->evidence($i,'project','composer.json',self::COMPOSER);
+  $this->evidence($i,'project','composer.json',$this->sample('composer.json'));
   $this->actingAs($u)->postJson("/api/investigations/{$i->id}/ai")->assertOk()->assertJsonPath('status','not_configured');
   $this->assertDatabaseHas('ai_analysis_runs',['investigation_id'=>$i->id,'state'=>'skipped']);
   $this->actingAs($u)->postJson("/api/investigations/{$i->id}/process")->assertOk();
